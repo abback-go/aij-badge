@@ -188,8 +188,12 @@
     }
   }
 
+  let latest = 0;  // 검증 도중 다른 파일을 고르면 먼저 시작한 검증의 결과는 버린다
+
   async function handle(file) {
     if (!file) return;
+    const mine = ++latest;
+    current = null;
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     previewUrl = URL.createObjectURL(file);
     $("preview").src = previewUrl;
@@ -202,6 +206,7 @@
     $("owner-result").textContent = "";
 
     const result = await verifyBadge(new Uint8Array(await file.arrayBuffer()), { issuerDid });
+    if (mine !== latest) return;
     const [tone, label, text] = STATUS[result.status];
     $("status").className = `status ${tone}`;
     $("status").textContent = label;
