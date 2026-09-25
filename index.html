@@ -72,6 +72,7 @@
   dl:empty { display: none; }
   dt { color: var(--muted); }
   dd { margin: 0; overflow-wrap: anywhere; }
+  dd a { color: var(--accent); }
   #owner { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
   #owner label { font-weight: 600; font-size: 15px; }
   .row { display: flex; gap: 8px; margin-top: 8px; }
@@ -167,6 +168,22 @@
       const dd = document.createElement("dd");
       dt.textContent = label;
       dd.textContent = value;
+      dl.append(dt, dd);
+    }
+    for (const item of info.evidence || []) {
+      const dt = document.createElement("dt");
+      const dd = document.createElement("dd");
+      dt.textContent = "결과물";
+      if (item.narrative) dd.append(item.narrative);
+      if (item.url) {  // verify.js가 http(s) 주소만 넘긴다
+        const a = document.createElement("a");
+        a.href = item.url;
+        a.textContent = item.url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        if (item.narrative) dd.append(document.createElement("br"));
+        dd.append(a);
+      }
       dl.append(dt, dd);
     }
   }

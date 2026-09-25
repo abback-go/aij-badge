@@ -104,11 +104,25 @@ async function fetchText(fetchFn, url) {
   return res.text();
 }
 
+// 화면에서 링크로 쓰일 주소는 http(s)만 통과시킨다(javascript: 등은 버림).
+function safeUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function describe(payload) {
   const subject = payload.credentialSubject || {};
   const achievement = subject.achievement || {};
   const nameId = [].concat(subject.identifier || []).find((i) => i.identityType === "name" && !i.hashed);
+  const evidence = [].concat(payload.evidence || [])
+    .map((e) => ({ url: safeUrl(e?.id), narrative: e?.narrative || e?.description || e?.name }))
+    .filter((e) => e.url || e.narrative);
   return {
+    evidence,
     badgeName: achievement.name,
     achievementId: achievement.id,
     criteria: achievement.criteria?.narrative,

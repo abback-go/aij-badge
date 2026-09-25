@@ -9,9 +9,9 @@
     "Achievement"
   ],
   "name": "AI Jungle Badge Lv.1 Seed (씨앗)",
-  "description": "명지전문대학 AI Jungle 비교과 프로그램 1단계(Seed) 수료 인증 배지",
+  "description": "명지전문대학 AI Jungle 비교과 프로그램 1단계(Seed) 수료 인증 배지. 생성형 AI의 원리와 한계, 윤리·저작권·개인정보 기본을 이해하고 기초 프롬프트를 작성할 수 있음을 인증합니다.",
   "criteria": {
-    "narrative": "[임시 문구] 레벨별 취득 기준표 확정 후 교체"
+    "narrative": "[초안] 기초 과정 4시간 이수 + 프롬프트 실습 기록 1건 제출 (선수 조건: 없음)"
   },
   "achievementType": "Badge",
   "image": {

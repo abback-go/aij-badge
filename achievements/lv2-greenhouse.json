@@ -9,9 +9,9 @@
     "Achievement"
   ],
   "name": "AI Jungle Badge Lv.2 Greenhouse (온실)",
-  "description": "명지전문대학 AI Jungle 비교과 프로그램 2단계(Greenhouse) 수료 인증 배지",
+  "description": "명지전문대학 AI Jungle 비교과 프로그램 2단계(Greenhouse) 수료 인증 배지. 학업·전공 과제에 AI 도구를 활용하고 결과의 사실 여부를 검증할 수 있음을 인증합니다.",
   "criteria": {
-    "narrative": "[임시 문구] 레벨별 취득 기준표 확정 후 교체"
+    "narrative": "[초안] 실습 워크숍 8시간 이수 + AI 활용 과제 2건 제출(활용 과정과 검증 기록 포함) (선수 조건: Lv.1)"
   },
   "achievementType": "Badge",
   "image": {

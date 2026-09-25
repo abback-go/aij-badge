@@ -9,9 +9,9 @@
     "Achievement"
   ],
   "name": "AI Jungle Badge Lv.4 Forest (숲)",
-  "description": "명지전문대학 AI Jungle 비교과 프로그램 4단계(Forest) 수료 인증 배지",
+  "description": "명지전문대학 AI Jungle 비교과 프로그램 4단계(Forest) 수료 인증 배지. 팀으로 전공·지역·산업의 실제 문제를 정의하고 AI로 해결책을 기획·구현·평가할 수 있음을 인증합니다.",
   "criteria": {
-    "narrative": "[임시 문구] 레벨별 취득 기준표 확정 후 교체"
+    "narrative": "[초안] 한 학기 팀 프로젝트 1건 완료 + 성과발표회 공개 발표 + 개인 기여도 확인 (선수 조건: Lv.3)"
   },
   "achievementType": "Badge",
   "image": {
