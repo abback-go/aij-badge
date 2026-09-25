@@ -1,8 +1,10 @@
-// AI Jungle Badge 검증 로직 (Open Badges 3.0, VC-JWT/EdDSA).
+// AI Jungle Badge 검증 로직 (Open Badges 3.0, VC-JWT/RS256).
 // DOM을 쓰지 않아 브라우저와 Node(테스트) 양쪽에서 돌아간다. 외부 라이브러리 없이
-// WebCrypto Ed25519(Chrome 137+, Firefox 129+, Safari 17+)와 DecompressionStream만 쓴다.
+// WebCrypto(RSASSA-PKCS1-v1_5)와 DecompressionStream만 쓴다.
 
 const ITXT_KEYWORD = "openbadgecredential";
+const JWT_ALG = "RS256"; // OB 3.0 §8.2.3 VC-JWT 필수 알고리즘 — 발급 측 aijbadge.issuing.ALGORITHM과 같아야 한다
+const KEY_ALGORITHM = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" };
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 
 class BadgeError extends Error {
@@ -75,10 +77,10 @@ const issuerId = (issuer) => (typeof issuer === "string" ? issuer : issuer?.id);
 // JWT 헤더에 들어 있는 키는 누구나 넣을 수 있으므로 신뢰하지 않는다.
 // 발급기관이 DID 문서로 공개한 키 중 헤더가 가리키는 것만 쓴다.
 function pickKey(didDoc, did, header) {
-  const methods = (didDoc.verificationMethod || []).filter((m) => m.publicKeyJwk?.crv === "Ed25519");
+  const methods = (didDoc.verificationMethod || []).filter((m) => m.publicKeyJwk?.kty === "RSA");
   let method;
   if (header.kid) method = methods.find((m) => m.id === header.kid || m.id === did + header.kid);
-  else if (header.jwk) method = methods.find((m) => m.publicKeyJwk.x === header.jwk.x);
+  else if (header.jwk) method = methods.find((m) => m.publicKeyJwk.n === header.jwk.n);
   else method = methods[0];
   if (!method) throw new BadgeError("발급기관이 공개한 키로 서명되지 않았습니다.");
   return method.publicKeyJwk;
@@ -86,12 +88,12 @@ function pickKey(didDoc, did, header) {
 
 async function verifyJwt(token, didDoc, did) {
   const { parts, header, payload } = decodeJwt(token);
-  if (header.alg !== "EdDSA") throw new BadgeError(`지원하지 않는 서명 방식입니다: ${header.alg}`);
+  if (header.alg !== JWT_ALG) throw new BadgeError(`지원하지 않는 서명 방식입니다: ${header.alg}`);
   const jwk = pickKey(didDoc, did, header);
   const key = await crypto.subtle.importKey(
-    "jwk", { kty: "OKP", crv: "Ed25519", x: jwk.x }, { name: "Ed25519" }, false, ["verify"]);
+    "jwk", { kty: "RSA", n: jwk.n, e: jwk.e }, KEY_ALGORITHM, false, ["verify"]);
   const ok = await crypto.subtle.verify(
-    { name: "Ed25519" }, key, b64urlBytes(parts[2]), new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
+    KEY_ALGORITHM, key, b64urlBytes(parts[2]), new TextEncoder().encode(`${parts[0]}.${parts[1]}`));
   if (!ok) throw new BadgeError("서명이 일치하지 않습니다. 배지 내용이 바뀌었거나 위조되었습니다.");
   return payload;
 }

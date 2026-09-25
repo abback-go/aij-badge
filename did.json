@@ -10,9 +10,12 @@
       "type": "JsonWebKey2020",
       "controller": "did:web:abback-go.github.io:aij-badge",
       "publicKeyJwk": {
-        "x": "mDJW9ruYZv7j5s2ea_zcNW8AQe77t0tZDb30t6EfwAo",
-        "kty": "OKP",
-        "crv": "Ed25519"
+        "kty": "RSA",
+        "key_ops": [
+          "verify"
+        ],
+        "n": "yRMKUHcpjb_edhnZ6Y3m8D-K0wJqkWahHeH5q-ux-wkalhVPM3VhLb_IQl3Svu9Wi_SvYyYzZljupOcLrwk5Hr-eT2pVtsSpepfW1ZUuEOcI4yHb4oPipVpY-VsGzxF9JLGkVzbthkNoDr49yvzaY8AHZBxYhr-TYFVb3ow46DntiF_CN-m9MX0rI9A3advKmeejmmmwpVUeRA0HkQ2fnUnLTK6nGCCls2Gk4GVcJNwysj_-GpPkAxYJNVnO-nFGaEo7-OYKxi-WfGBfF0497h-BJPzS8bu2NiGAngMlquY5zqlq-WhGKLXVKlVYlI2vYNo8oBMP9lBZfysMjHwkKw",
+        "e": "AQAB"
       }
     }
   ],
