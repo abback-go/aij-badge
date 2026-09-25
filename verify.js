@@ -139,6 +139,9 @@ async function isRevoked(payload, didDoc, issuerDid, fetchFn) {
   if (!entry) return false;
   const list = await verifyJwt(await fetchText(fetchFn, entry.statusListCredential), didDoc, issuerDid);
   if (issuerId(list.issuer) !== issuerDid) throw new Error("취소 목록의 발급기관이 다릅니다");
+  // 같은 키로 서명된 다른 목록(다른 주소·다른 용도)을 대신 내미는 것을 막는다.
+  if (list.id !== entry.statusListCredential) throw new Error("배지가 가리키는 취소 목록이 아닙니다");
+  if (list.credentialSubject?.statusPurpose !== "revocation") throw new Error("취소(revocation) 목록이 아닙니다");
   const encoded = list.credentialSubject?.encodedList || "";
   if (!encoded.startsWith("u")) throw new Error("취소 목록 형식 오류");
   const bits = await inflate(b64urlBytes(encoded.slice(1)), "gzip");
@@ -147,11 +150,16 @@ async function isRevoked(payload, didDoc, issuerDid, fetchFn) {
   return ((bits[index >> 3] >> (7 - (index & 7))) & 1) === 1;
 }
 
+// 발급 직후 시계가 조금 느린 PC에서 "아직 유효하지 않음"이 뜨지 않도록 허용하는 오차
+const CLOCK_SKEW_MS = 5 * 60 * 1000;
+
 function checkValidity(payload, now) {
   const from = Date.parse(payload.validFrom);
-  if (!Number.isNaN(from) && from > now.getTime()) throw new BadgeError("아직 유효 기간이 시작되지 않은 배지입니다.");
+  if (!Number.isNaN(from) && from > now.getTime() + CLOCK_SKEW_MS) {
+    throw new BadgeError("아직 유효 기간이 시작되지 않은 배지입니다.");
+  }
   const until = Date.parse(payload.validUntil);
-  if (!Number.isNaN(until) && until < now.getTime()) throw new BadgeError("유효 기간이 지난 배지입니다.");
+  if (!Number.isNaN(until) && until < now.getTime() - CLOCK_SKEW_MS) throw new BadgeError("유효 기간이 지난 배지입니다.");
 }
 
 /**
