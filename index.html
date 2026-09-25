@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="issuer-did" content="did:web:abback-go.github.io:aij-badge">
+<title>AI Jungle Badge 검증</title>
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --surface: #ffffff;
+    --text: #1f2a24;
+    --muted: #5d6b63;
+    --line: #dcd6c9;
+    --accent: #2f6b4f;
+    --copper: #a8643a;
+    --ok: #1f7a4d;
+    --ok-bg: #e3f3ea;
+    --bad: #b3261e;
+    --bad-bg: #fbe7e5;
+    --warn: #8a5a00;
+    --warn-bg: #fdf1d8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121815;
+      --surface: #1b231f;
+      --text: #e7ece9;
+      --muted: #a3b1a9;
+      --line: #2e3a34;
+      --accent: #7cc4a0;
+      --copper: #d9925f;
+      --ok: #7fd6a7;
+      --ok-bg: #173226;
+      --bad: #ff8a80;
+      --bad-bg: #3a1c1a;
+      --warn: #f2c56b;
+      --warn-bg: #3a2e14;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    word-break: keep-all; /* 한국어를 음절이 아닌 어절 단위로 줄바꿈 */
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 48px 16px 64px; }
+  .eyebrow { margin: 0; color: var(--copper); font-weight: 600; font-size: 14px; letter-spacing: .02em; }
+  h1 { margin: 4px 0 8px; font-size: 28px; line-height: 1.3; }
+  .lede { margin: 0 0 28px; color: var(--muted); }
+  .drop {
+    display: block; padding: 36px 20px; text-align: center; cursor: pointer;
+    background: var(--surface); border: 2px dashed var(--line); border-radius: 16px;
+    transition: border-color .15s, background-color .15s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); }
+  .drop:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .drop-title { display: block; font-weight: 600; }
+  .drop-hint { display: block; margin-top: 4px; color: var(--muted); font-size: 14px; }
+  #result { margin-top: 24px; padding: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
+  .result-head { display: flex; gap: 16px; align-items: center; }
+  #preview { width: 88px; height: 88px; object-fit: contain; flex: none; }
+  .status { display: inline-block; margin: 0; padding: 4px 12px; border-radius: 999px; font-weight: 700; }
+  .status.ok { color: var(--ok); background: var(--ok-bg); }
+  .status.bad { color: var(--bad); background: var(--bad-bg); }
+  .status.warn { color: var(--warn); background: var(--warn-bg); }
+  .reason { margin: 8px 0 0; color: var(--muted); font-size: 15px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 20px 0 0; }
+  dl:empty { display: none; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  #owner { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+  #owner label { font-weight: 600; font-size: 15px; }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  .row input {
+    flex: 1; min-width: 0; padding: 10px 12px; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .row button {
+    padding: 10px 18px; font: inherit; font-weight: 600; color: #fff; cursor: pointer;
+    background: var(--accent); border: 0; border-radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) { .row button { color: #0f1a14; } }
+  .owner-result { margin: 8px 0 0; font-size: 15px; }
+  footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">명지전문대학 · Myongji College</p>
+    <h1>AI Jungle Badge 검증</h1>
+    <p class="lede">받은 배지 PNG 파일을 올리면 명지전문대학이 발급한 배지가 맞는지, 취소되지 않았는지 확인합니다.</p>
+  </header>
+
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept="image/png">
+    <span class="drop-title">배지 파일을 끌어다 놓거나 눌러서 선택하세요</span>
+    <span class="drop-hint">PNG 파일 · 파일은 서버로 전송되지 않습니다</span>
+  </label>
+
+  <section id="result" hidden aria-live="polite">
+    <div class="result-head">
+      <img id="preview" alt="올린 배지 이미지">
+      <div>
+        <p id="status" class="status"></p>
+        <p id="reason" class="reason"></p>
+      </div>
+    </div>
+    <dl id="details"></dl>
+    <form id="owner" hidden>
+      <label for="email">받은 사람 확인 (선택)</label>
+      <div class="row">
+        <input id="email" type="email" placeholder="배지를 받은 이메일 주소" required>
+        <button type="submit">확인</button>
+      </div>
+      <p id="owner-result" class="owner-result"></p>
+    </form>
+  </section>
+
+  <footer>검증은 모두 이 브라우저 안에서 이루어집니다. 확인을 위해 발급기관의 공개키와 취소 목록만 불러옵니다.</footer>
+</main>
+
+<script type="module">
+  import { checkOwner, verifyBadge } from "./verify.js";
+
+  const issuerDid = document.querySelector('meta[name="issuer-did"]').content;
+  const $ = (id) => document.getElementById(id);
+
+  // 배지 안의 문자열은 외부 입력이므로 항상 textContent로만 넣는다(innerHTML 금지).
+  const STATUS = {
+    valid:   ["ok",   "유효한 배지",           "명지전문대학이 발급했고 취소되지 않은 배지입니다."],
+    revoked: ["bad",  "취소된 배지",           "발급기관이 이 배지를 취소했습니다."],
+    invalid: ["bad",  "검증 실패",             null],
+    foreign: ["warn", "다른 기관이 발급한 배지", "명지전문대학이 발급한 AI Jungle Badge가 아닙니다."],
+    unknown: ["warn", "취소 여부 확인 불가",    "서명은 유효하지만 취소 목록을 불러오지 못했습니다. 잠시 후 다시 확인하세요."],
+    error:   ["warn", "확인할 수 없음",         null],
+  };
+  const SHOW_DETAILS = new Set(["valid", "revoked", "unknown"]);
+
+  let current = null;
+  let previewUrl = null;
+
+  function formatDate(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso || "";
+    return d.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Seoul" });
+  }
+
+  function renderDetails(info) {
+    const rows = [
+      ["배지", info.badgeName],
+      ["받은 사람", info.name],
+      ["발급번호", info.credentialNo],
+      ["발급일", formatDate(info.issuedAt)],
+      ["발급기관", info.issuerName],
+      ["취득 기준", info.criteria],
+    ];
+    const dl = $("details");
+    dl.replaceChildren();
+    for (const [label, value] of rows) {
+      if (!value) continue;
+      const dt = document.createElement("dt");
+      const dd = document.createElement("dd");
+      dt.textContent = label;
+      dd.textContent = value;
+      dl.append(dt, dd);
+    }
+  }
+
+  async function handle(file) {
+    if (!file) return;
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(file);
+    $("preview").src = previewUrl;
+    $("result").hidden = false;
+    $("status").className = "status";
+    $("status").textContent = "확인 중…";
+    $("reason").textContent = "";
+    $("details").replaceChildren();
+    $("owner").hidden = true;
+    $("owner-result").textContent = "";
+
+    const result = await verifyBadge(new Uint8Array(await file.arrayBuffer()), { issuerDid });
+    const [tone, label, text] = STATUS[result.status];
+    $("status").className = `status ${tone}`;
+    $("status").textContent = label;
+    $("reason").textContent = text || result.reason || "";
+    current = result;
+    if (SHOW_DETAILS.has(result.status)) {
+      renderDetails(result.info);
+      $("owner").hidden = false;
+    }
+  }
+
+  $("file").addEventListener("change", (e) => {
+    handle(e.target.files[0]);
+    e.target.value = "";
+  });
+  const drop = $("drop");
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    handle(e.dataTransfer.files[0]);
+  });
+
+  $("owner").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!current) return;
+    const match = await checkOwner(current.payload, $("email").value);
+    $("owner-result").textContent = match
+      ? "이 이메일 주소로 발급된 배지입니다."
+      : "이 이메일 주소로 발급된 배지가 아닙니다.";
+  });
+</script>
+</body>
+</html>

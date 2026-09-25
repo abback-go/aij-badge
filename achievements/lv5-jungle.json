@@ -1,0 +1,21 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json",
+    "https://purl.imsglobal.org/spec/ob/v3p0/extensions.json"
+  ],
+  "id": "https://abback-go.github.io/aij-badge/achievements/lv5-jungle.json",
+  "type": [
+    "Achievement"
+  ],
+  "name": "AI Jungle Badge Lv.5 Jungle (정글)",
+  "description": "명지전문대학 AI Jungle 비교과 프로그램 5단계(Jungle) 수료 인증 배지",
+  "criteria": {
+    "narrative": "[임시 문구] 레벨별 취득 기준표 확정 후 교체"
+  },
+  "achievementType": "Badge",
+  "image": {
+    "id": "https://abback-go.github.io/aij-badge/images/lv5-jungle.png",
+    "type": "Image"
+  }
+}

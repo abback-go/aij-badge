@@ -1,0 +1,22 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/suites/jws-2020/v1"
+  ],
+  "id": "did:web:abback-go.github.io:aij-badge",
+  "verificationMethod": [
+    {
+      "id": "did:web:abback-go.github.io:aij-badge#key-1",
+      "type": "JsonWebKey2020",
+      "controller": "did:web:abback-go.github.io:aij-badge",
+      "publicKeyJwk": {
+        "x": "mDJW9ruYZv7j5s2ea_zcNW8AQe77t0tZDb30t6EfwAo",
+        "kty": "OKP",
+        "crv": "Ed25519"
+      }
+    }
+  ],
+  "assertionMethod": [
+    "did:web:abback-go.github.io:aij-badge#key-1"
+  ]
+}
