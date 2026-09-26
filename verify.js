@@ -91,11 +91,16 @@ export function didToUrl(did) {
 function decodeJwt(token) {
   const parts = token.trim().split(".");
   if (parts.length !== 3) throw new BadgeError("배지 서명 형식이 올바르지 않습니다.");
+  let header, payload;
   try {
-    return { parts, header: b64urlJson(parts[0]), payload: b64urlJson(parts[1]) };
+    header = b64urlJson(parts[0]);
+    payload = b64urlJson(parts[1]);
   } catch {
     throw new BadgeError("배지 데이터가 손상되었습니다.");
   }
+  // JSON으로 읽혀도 객체가 아니면(null·숫자·배열 등) 배지가 아니다 — 뒤의 속성 접근에서 멈추지 않게 여기서 거른다
+  if (!isObject(header) || !isObject(payload)) throw new BadgeError("배지 데이터가 손상되었습니다.");
+  return { parts, header, payload };
 }
 
 const issuerId = (issuer) => (typeof issuer === "string" ? issuer : issuer?.id);

@@ -205,7 +205,12 @@
     $("owner").hidden = true;
     $("owner-result").textContent = "";
 
-    const result = await verifyBadge(new Uint8Array(await file.arrayBuffer()), { issuerDid });
+    let result;
+    try {
+      result = await verifyBadge(new Uint8Array(await file.arrayBuffer()), { issuerDid });
+    } catch (e) {  // 예상 못 한 오류에도 '확인 중'에 멈춰 있지 않게
+      result = { status: "error", reason: `확인 중 오류가 났습니다. (${e.message})` };
+    }
     if (mine !== latest) return;
     const [tone, label, text] = STATUS[result.status];
     $("status").className = `status ${tone}`;
