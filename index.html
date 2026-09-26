@@ -148,6 +148,10 @@
   .result[data-tone="bad"] .i-bad,
   .result[data-tone="warn"] .i-warn { display: block; }
   .reason { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+  .cause { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+  .cause summary { width: fit-content; cursor: pointer; }
+  .cause summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  .cause p { margin: 4px 0 0; overflow-wrap: anywhere; }
   .result[data-tone="loading"] .status { color: var(--muted); font-weight: 600; font-size: 18px; }
 
   .body { padding: 8px 12px 12px; }
@@ -265,6 +269,10 @@
               <span id="status"></span>
             </p>
             <p id="reason" class="reason"></p>
+            <details id="cause" class="cause" hidden>
+              <summary>자세한 원인</summary>
+              <p id="cause-text"></p>
+            </details>
           </div>
         </div>
         <div class="skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -363,6 +371,11 @@
     el.classList.add("enter");
   }
 
+  function clearOwnerResult() {
+    $("owner-result").textContent = "";
+    $("owner-result").className = "owner-result";
+  }
+
   let latest = 0;  // 검증 도중 다른 파일을 고르면 먼저 시작한 검증의 결과는 버린다
 
   async function handle(file) {
@@ -380,10 +393,12 @@
     $("result").dataset.tone = "loading";
     $("status").textContent = "확인 중…";
     $("reason").textContent = "";
+    $("cause").hidden = true;
+    $("cause").open = false;
+    $("cause-text").textContent = "";
     $("details").replaceChildren();
     $("owner").hidden = true;
-    $("owner-result").textContent = "";
-    $("owner-result").className = "owner-result";
+    clearOwnerResult();
     replayEnter($("result"));
     if (narrow.matches) {  // 한 단 화면에서는 결과가 파일 선택 칸 아래에 있으므로 그쪽으로 옮겨 준다
       $("result").scrollIntoView({ block: "start", behavior: reduceMotion.matches ? "auto" : "smooth" });
@@ -404,6 +419,10 @@
     $("result").dataset.tone = tone;
     $("status").textContent = label;
     $("reason").textContent = text || result.reason || "";
+    if (result.detail) {
+      $("cause-text").textContent = result.detail;
+      $("cause").hidden = false;
+    }
     current = result;
     if (SHOW_DETAILS.has(result.status)) {
       renderDetails(result.info);
@@ -423,6 +442,9 @@
     drop.classList.remove("over");
     handle(e.dataTransfer.files[0]);
   });
+
+  // 주소를 고치거나 지우면 이전 확인 결과는 지금 입력한 주소에 대한 답이 아니다
+  $("email").addEventListener("input", clearOwnerResult);
 
   $("owner").addEventListener("submit", async (e) => {
     e.preventDefault();

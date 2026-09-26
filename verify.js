@@ -8,11 +8,16 @@ const KEY_ALGORITHM = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" };
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 
 class BadgeError extends Error {
-  constructor(message, status = "invalid") {
+  constructor(message, status = "invalid", detail = undefined) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
+
+// 표준 형식 위반: 검증하는 사람에게는 쉬운 안내만 보이고, 기술적인 원인(iss·sub 등)은 detail로 따로 넘긴다
+const formatError = (detail) =>
+  new BadgeError("Open Badges 표준 형식에 맞지 않는 배지입니다. 발급기관에 문의해 주세요.", "invalid", detail);
 
 const ascii = (bytes) => String.fromCharCode(...bytes);
 
@@ -131,7 +136,7 @@ const VC_CONTEXT = "https://www.w3.org/ns/credentials/v2";
 const OB_CONTEXT = /^https:\/\/purl\.imsglobal\.org\/spec\/ob\/v3p0\/context(-3\.\d\.\d)*\.json$/;
 
 function checkCredential(p) {
-  const bad = (why) => { throw new BadgeError(`Open Badges 배지 형식이 아닙니다: ${why}`); };
+  const bad = (why) => { throw formatError(why); };
   // VC 2.0 문서의 첫 @context는 VC 기본 문맥, 둘째는 OB 3.0 문맥이어야 한다(스키마가 없어도 확인)
   const context = [].concat(p["@context"] ?? []);
   if (context[0] !== VC_CONTEXT || !OB_CONTEXT.test(context[1] ?? "")) bad("@context");
@@ -304,7 +309,7 @@ async function checkSchema(payload, fetchFn, schemaBase) {
   for (const declared of [].concat(payload.credentialSchema || [])) {
     if (declared?.type !== SCHEMA_VALIDATOR) continue;  // 다른 방식의 스키마는 §9.1 검사 대상이 아니다
     const file = SCHEMA_FILES[declared.id];
-    if (!file) throw new BadgeError(`Open Badges 배지 형식이 아닙니다: 지원하지 않는 스키마 ${declared.id}`);
+    if (!file) throw formatError(`지원하지 않는 스키마 ${declared.id}`);
     let schema;
     try {
       schema = JSON.parse(await fetchText(fetchFn, new URL(file, schemaBase).href));
@@ -317,7 +322,7 @@ async function checkSchema(payload, fetchFn, schemaBase) {
     } catch (e) {  // 스키마를 이 검사기가 다루지 못함 — 배지 탓이 아니므로 '확인할 수 없음'
       throw new BadgeError(`배지 형식을 검사할 수 없습니다. (${e.message})`, "error");
     }
-    if (problem) throw new BadgeError(`Open Badges 배지 형식이 아닙니다: 스키마 검사 실패 (${problem})`);
+    if (problem) throw formatError(`스키마 검사 실패 (${problem})`);
   }
 }
 
@@ -417,7 +422,7 @@ function checkValidity(payload, now) {
   // §8.2.6.1: exp가 있으면 그것이 유효 기간 끝이다. 기간 값이 있는데 형식이 틀리면 기한이 없는 것으로 보지 않는다.
   const from = isoTime(payload.validFrom);
   const until = payload.exp !== undefined ? epochTime(payload.exp) : isoTime(payload.validUntil);
-  if (from === null || until === null) throw new BadgeError("Open Badges 배지 형식이 아닙니다: 유효 기간 값");
+  if (from === null || until === null) throw formatError("유효 기간 값");
   if (from > now.getTime() + CLOCK_SKEW_MS) throw new BadgeError("아직 유효 기간이 시작되지 않은 배지입니다.");
   if (until < now.getTime() - CLOCK_SKEW_MS) throw new BadgeError("유효 기간이 지난 배지입니다.");
 }
@@ -425,6 +430,7 @@ function checkValidity(payload, now) {
 /**
  * 결과 status: valid(유효) | revoked(취소) | invalid(위·변조/손상) | foreign(다른 발급기관)
  *              | unknown(서명 유효, 취소 여부 확인 불가) | error(발급기관 정보를 못 불러와 확인 불가)
+ * 형식 오류면 reason은 쉬운 안내, detail은 기술적인 원인이다.
  * schemaBase: 공식 스키마 사본(ob_v3p0_achievementcredential_schema.json)이 있는 주소. 기본은 이 파일과 같은 곳.
  */
 export async function verifyBadge(bytes, { issuerDid, fetchFn = (url, init) => fetch(url, init), now = new Date(),
@@ -454,7 +460,7 @@ export async function verifyBadge(bytes, { issuerDid, fetchFn = (url, init) => f
     await checkSchema(payload, fetchFn, schemaBase);
     checkValidity(payload, now);
   } catch (e) {
-    return { status: e.status || "invalid", reason: e.message };
+    return { status: e.status || "invalid", reason: e.message, detail: e.detail };
   }
   const info = describe(payload);
 
