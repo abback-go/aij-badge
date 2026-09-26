@@ -24,12 +24,37 @@ function b64urlBytes(text) {
 
 const b64urlJson = (text) => JSON.parse(new TextDecoder().decode(b64urlBytes(text)));
 
-async function inflate(bytes, format) {
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+// 서명을 확인하기 전에 다루는 입력의 크기 상한. 작은 압축 데이터가 거대하게 풀리는 파일로 브라우저 메모리를
+// 고갈시키지 못하게 한다. 우리 배지는 PNG 약 0.5MB, 배지 정보(JWT) 수 KB, 취소 목록은 131072비트(16KB) 단위다.
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_TOKEN_BYTES = 256 * 1024;
+const MAX_STATUS_LIST_BYTES = 16 * 1024 * 1024;
+
+async function inflate(bytes, format, limit) {
+  const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format)).getReader();
+  const parts = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > limit) {  // 끝까지 풀지 않고 바로 멈춘다
+      await reader.cancel();
+      throw new BadgeError("압축을 푼 데이터가 너무 큽니다.");
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
 }
 
 export async function extractToken(bytes) {
+  if (bytes.length > MAX_FILE_BYTES) throw new BadgeError("파일이 너무 큽니다. 배지 PNG 파일인지 확인하세요.");
   if (!PNG_SIGNATURE.every((b, i) => bytes[i] === b)) {
     throw new BadgeError("PNG 파일이 아닙니다.");
   }
@@ -47,7 +72,8 @@ export async function extractToken(bytes) {
         const langEnd = data.indexOf(0, k + 3);
         const translatedEnd = data.indexOf(0, langEnd + 1);
         const text = data.subarray(translatedEnd + 1);
-        return new TextDecoder().decode(compressed ? await inflate(text, "deflate") : text);
+        if (!compressed && text.length > MAX_TOKEN_BYTES) throw new BadgeError("배지 정보가 너무 큽니다.");
+        return new TextDecoder().decode(compressed ? await inflate(text, "deflate", MAX_TOKEN_BYTES) : text);
       }
     }
     if (type === "IEND") break;
@@ -96,8 +122,14 @@ const REVOCATION_ENTRY = (e) => e?.type === "BitstringStatusListEntry" && (e.sta
 
 // 서명이 맞아도 "배지"라는 보장은 없다(예: 같은 키로 서명된 취소 목록). OB 3.0 배지 구조와
 // VC-JWT 필수 클레임(§8.2.6.1: iss·sub·nbf·jti가 배지 필드와 일치, exp 반영)을 확인한다.
+const VC_CONTEXT = "https://www.w3.org/ns/credentials/v2";
+const OB_CONTEXT = /^https:\/\/purl\.imsglobal\.org\/spec\/ob\/v3p0\/context(-3\.\d\.\d)*\.json$/;
+
 function checkCredential(p) {
   const bad = (why) => { throw new BadgeError(`Open Badges 배지 형식이 아닙니다: ${why}`); };
+  // VC 2.0 문서의 첫 @context는 VC 기본 문맥, 둘째는 OB 3.0 문맥이어야 한다(스키마가 없어도 확인)
+  const context = [].concat(p["@context"] ?? []);
+  if (context[0] !== VC_CONTEXT || !OB_CONTEXT.test(context[1] ?? "")) bad("@context");
   const vcTypes = types(p);
   if (!vcTypes.includes("VerifiableCredential") ||
       !(vcTypes.includes("OpenBadgeCredential") || vcTypes.includes("AchievementCredential"))) bad("배지 유형");
@@ -118,6 +150,136 @@ function checkCredential(p) {
     if (!/^\d+$/.test(String(entry.statusListIndex ?? "")) || typeof entry.statusListCredential !== "string") {
       bad("취소 목록 항목");
     }
+  }
+}
+
+// ── OB 3.0 §9.1: credentialSchema가 1EdTech JSON 스키마를 가리키면 그 스키마로 검사한다 ─────────────
+// 공식 스키마 사본을 검증 페이지와 같은 곳에 두고 읽는다(외부 사이트를 매번 부르지 않게).
+const SCHEMA_VALIDATOR = "1EdTechJsonSchemaValidator2019";
+const SCHEMA_FILES = {
+  "https://purl.imsglobal.org/spec/ob/v3p0/schema/json/ob_v3p0_achievementcredential_schema.json":
+    "ob_v3p0_achievementcredential_schema.json",
+};
+
+// 공식 스키마(draft 2019-09)가 쓰는 키워드만 지원하는 작은 검사기. 모르는 키워드가 나오면 통과시키지 않고
+// 실패한다 — 스키마가 바뀌었는데 검사를 조용히 건너뛰는 일이 없게. format(date-time·date)도 확인한다.
+const SCHEMA_ANNOTATIONS = new Set(["$schema", "$id", "$comment", "$defs", "title", "description", "examples", "default"]);
+const SCHEMA_KEYWORDS = new Set(["$ref", "type", "enum", "pattern", "format", "minItems", "items", "additionalItems",
+  "contains", "required", "properties", "propertyNames", "additionalProperties", "allOf", "anyOf", "oneOf"]);
+const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/i;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const patterns = new Map();
+
+const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+
+function isType(value, type) {
+  switch (type) {
+    case "object": return isObject(value);
+    case "array": return Array.isArray(value);
+    case "string": return typeof value === "string";
+    case "boolean": return typeof value === "boolean";
+    case "number": return typeof value === "number" && Number.isFinite(value);
+    case "integer": return Number.isInteger(value);
+    case "null": return value === null;
+    default: throw new Error(`지원하지 않는 스키마 형식 ${type}`);
+  }
+}
+
+function sameValue(a, b) {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((k) => own(b, k) && sameValue(a[k], b[k]));
+}
+
+function resolveRef(root, ref) {
+  if (!ref.startsWith("#")) throw new Error(`외부 스키마 참조는 지원하지 않습니다: ${ref}`);
+  return ref.slice(1).split("/").filter(Boolean).reduce((node, part) => {
+    const key = decodeURIComponent(part).replace(/~1/g, "/").replace(/~0/g, "~");
+    if (node === undefined || !own(node, key)) throw new Error(`스키마 참조를 찾을 수 없습니다: ${ref}`);
+    return node[key];
+  }, root);
+}
+
+function regex(pattern) {
+  if (!patterns.has(pattern)) patterns.set(pattern, new RegExp(pattern));
+  return patterns.get(pattern);
+}
+
+// value가 schema에 맞으면 null, 아니면 첫 문제를 설명하는 문자열
+export function schemaError(root, schema, value, path = "$") {
+  if (schema === true) return null;
+  if (schema === false) return `${path}: 허용되지 않는 값`;
+  for (const key of Object.keys(schema)) {
+    if (!SCHEMA_KEYWORDS.has(key) && !SCHEMA_ANNOTATIONS.has(key)) throw new Error(`지원하지 않는 스키마 키워드 ${key}`);
+  }
+  const fail = (why) => `${path}: ${why}`;
+  const sub = (s, v, p) => schemaError(root, s, v, p);
+  let e;
+  if (schema.$ref !== undefined && (e = sub(resolveRef(root, schema.$ref), value, path))) return e;
+  if (schema.type !== undefined && ![].concat(schema.type).some((t) => isType(value, t))) {
+    return fail(`${[].concat(schema.type).join("·")} 형식이어야 함`);
+  }
+  if (schema.enum !== undefined && !schema.enum.some((v) => sameValue(v, value))) return fail("허용되지 않는 값");
+  if (typeof value === "string") {
+    if (schema.pattern !== undefined && !regex(schema.pattern).test(value)) return fail("형식이 맞지 않음");
+    if (schema.format === "date-time" && !(DATE_TIME.test(value) && !Number.isNaN(Date.parse(value)))) {
+      return fail("날짜·시각 형식이 아님");
+    }
+    if (schema.format === "date" && !(DATE.test(value) && !Number.isNaN(Date.parse(value)))) return fail("날짜 형식이 아님");
+  }
+  if (Array.isArray(value)) {
+    if (schema.minItems !== undefined && value.length < schema.minItems) return fail(`항목이 ${schema.minItems}개 이상이어야 함`);
+    if (Array.isArray(schema.items)) {  // 앞쪽 항목마다 스키마가 따로 있고, 나머지는 additionalItems
+      for (let i = 0; i < value.length; i++) {
+        const s = i < schema.items.length ? schema.items[i] : schema.additionalItems;
+        if (s !== undefined && (e = sub(s, value[i], `${path}[${i}]`))) return e;
+      }
+    } else if (schema.items !== undefined) {
+      for (let i = 0; i < value.length; i++) if ((e = sub(schema.items, value[i], `${path}[${i}]`))) return e;
+    }
+    if (schema.contains !== undefined && !value.some((v, i) => !sub(schema.contains, v, `${path}[${i}]`))) {
+      return fail("필요한 항목이 없음");
+    }
+  }
+  if (isObject(value)) {
+    for (const key of schema.required || []) if (!own(value, key)) return fail(`${key} 없음`);
+    const props = schema.properties || {};
+    for (const [key, v] of Object.entries(value)) {
+      if (schema.propertyNames !== undefined && (e = sub(schema.propertyNames, key, `${path} 속성 이름 ${key}`))) return e;
+      const s = own(props, key) ? props[key] : schema.additionalProperties;
+      if (s !== undefined && (e = sub(s, v, `${path}.${key}`))) return e;
+    }
+  }
+  for (const s of schema.allOf || []) if ((e = sub(s, value, path))) return e;
+  if (schema.anyOf && !schema.anyOf.some((s) => !sub(s, value, path))) return fail("조건에 맞는 형식이 없음");
+  if (schema.oneOf) {
+    const matches = schema.oneOf.filter((s) => !sub(s, value, path)).length;
+    if (matches !== 1) return fail(matches ? "여러 형식에 동시에 해당함" : "맞는 형식이 없음");
+  }
+  return null;
+}
+
+async function checkSchema(payload, fetchFn, schemaBase) {
+  for (const declared of [].concat(payload.credentialSchema || [])) {
+    if (declared?.type !== SCHEMA_VALIDATOR) continue;  // 다른 방식의 스키마는 §9.1 검사 대상이 아니다
+    const file = SCHEMA_FILES[declared.id];
+    if (!file) throw new BadgeError(`Open Badges 배지 형식이 아닙니다: 지원하지 않는 스키마 ${declared.id}`);
+    let schema;
+    try {
+      schema = JSON.parse(await fetchText(fetchFn, new URL(file, schemaBase).href));
+    } catch (e) {
+      throw new BadgeError(`배지 형식 검사에 필요한 스키마를 불러오지 못했습니다. (${e.message})`, "error");
+    }
+    let problem;
+    try {
+      problem = schemaError(schema, schema, payload);
+    } catch (e) {  // 스키마를 이 검사기가 다루지 못함 — 배지 탓이 아니므로 '확인할 수 없음'
+      throw new BadgeError(`배지 형식을 검사할 수 없습니다. (${e.message})`, "error");
+    }
+    if (problem) throw new BadgeError(`Open Badges 배지 형식이 아닙니다: 스키마 검사 실패 (${problem})`);
   }
 }
 
@@ -170,22 +332,37 @@ function describe(payload) {
 
 const MIN_STATUS_LIST_BITS = 131072; // W3C Bitstring Status List 최소 크기(§2.1)
 
-async function isRevoked(payload, didDoc, issuerDid, fetchFn) {
-  const entry = [].concat(payload.credentialStatus || []).find(REVOCATION_ENTRY);
-  if (!entry) return false;
-  const list = await verifyJwt(await fetchText(fetchFn, entry.statusListCredential), didDoc, issuerDid);
+// 배지의 취소 항목을 모두 확인한다(하나라도 취소면 취소). 같은 목록은 한 번만 불러온다.
+async function isRevoked(payload, didDoc, issuerDid, fetchFn, now) {
+  const lists = new Map();
+  for (const entry of [].concat(payload.credentialStatus || []).filter(REVOCATION_ENTRY)) {
+    const url = entry.statusListCredential;
+    if (!lists.has(url)) lists.set(url, await loadStatusList(url, didDoc, issuerDid, fetchFn, now));
+    const bits = lists.get(url);
+    const index = Number(entry.statusListIndex);  // checkCredential에서 숫자 문자열임을 확인함
+    if (index >= bits.length * 8) throw new Error("취소 목록 인덱스 범위 오류");
+    if (((bits[index >> 3] >> (7 - (index & 7))) & 1) === 1) return true;
+  }
+  return false;
+}
+
+async function loadStatusList(url, didDoc, issuerDid, fetchFn, now) {
+  const list = await verifyJwt(await fetchText(fetchFn, url), didDoc, issuerDid);
   if (!types(list).includes("BitstringStatusListCredential")) throw new Error("취소 목록 형식이 아닙니다");
   if (issuerId(list.issuer) !== issuerDid) throw new Error("취소 목록의 발급기관이 다릅니다");
   // 같은 키로 서명된 다른 목록(다른 주소·다른 용도)을 대신 내미는 것을 막는다.
-  if (list.id !== entry.statusListCredential) throw new Error("배지가 가리키는 취소 목록이 아닙니다");
+  if (list.id !== url) throw new Error("배지가 가리키는 취소 목록이 아닙니다");
   if (list.credentialSubject?.statusPurpose !== "revocation") throw new Error("취소(revocation) 목록이 아닙니다");
+  // 목록 자체의 유효 기간: 아직 시작되지 않았거나 끝난 목록은 쓰지 않는다(validUntil을 요구하지는 않음)
+  const starts = [Date.parse(list.validFrom), typeof list.nbf === "number" ? list.nbf * 1000 : NaN];
+  if (starts.some((t) => t > now.getTime() + CLOCK_SKEW_MS)) throw new Error("취소 목록의 유효 기간이 아직 시작되지 않았습니다");
+  const ends = [Date.parse(list.validUntil), typeof list.exp === "number" ? list.exp * 1000 : NaN];
+  if (ends.some((t) => t < now.getTime() - CLOCK_SKEW_MS)) throw new Error("취소 목록의 유효 기간이 지났습니다");
   const encoded = list.credentialSubject?.encodedList || "";
   if (!encoded.startsWith("u")) throw new Error("취소 목록 형식 오류");
-  const bits = await inflate(b64urlBytes(encoded.slice(1)), "gzip");
+  const bits = await inflate(b64urlBytes(encoded.slice(1)), "gzip", MAX_STATUS_LIST_BYTES);
   if (bits.length * 8 < MIN_STATUS_LIST_BITS) throw new Error("취소 목록이 표준 최소 크기보다 작습니다");
-  const index = Number(entry.statusListIndex);  // checkCredential에서 숫자 문자열임을 확인함
-  if (index >= bits.length * 8) throw new Error("취소 목록 인덱스 범위 오류");
-  return ((bits[index >> 3] >> (7 - (index & 7))) & 1) === 1;
+  return bits;
 }
 
 // 발급 직후 시계가 조금 느린 PC에서 "아직 유효하지 않음"이 뜨지 않도록 허용하는 오차
@@ -204,8 +381,10 @@ function checkValidity(payload, now) {
 /**
  * 결과 status: valid(유효) | revoked(취소) | invalid(위·변조/손상) | foreign(다른 발급기관)
  *              | unknown(서명 유효, 취소 여부 확인 불가) | error(발급기관 정보를 못 불러와 확인 불가)
+ * schemaBase: 공식 스키마 사본(ob_v3p0_achievementcredential_schema.json)이 있는 주소. 기본은 이 파일과 같은 곳.
  */
-export async function verifyBadge(bytes, { issuerDid, fetchFn = (url, init) => fetch(url, init), now = new Date() }) {
+export async function verifyBadge(bytes, { issuerDid, fetchFn = (url, init) => fetch(url, init), now = new Date(),
+                                           schemaBase = new URL("./", import.meta.url).href }) {
   let token, payload;
   try {
     token = await extractToken(bytes);
@@ -228,6 +407,7 @@ export async function verifyBadge(bytes, { issuerDid, fetchFn = (url, init) => f
   try {
     payload = await verifyJwt(token, didDoc, issuerDid);
     checkCredential(payload);
+    await checkSchema(payload, fetchFn, schemaBase);
     checkValidity(payload, now);
   } catch (e) {
     return { status: e.status || "invalid", reason: e.message };
@@ -235,7 +415,7 @@ export async function verifyBadge(bytes, { issuerDid, fetchFn = (url, init) => f
   const info = describe(payload);
 
   try {
-    const revoked = await isRevoked(payload, didDoc, issuerDid, fetchFn);
+    const revoked = await isRevoked(payload, didDoc, issuerDid, fetchFn, now);
     return { status: revoked ? "revoked" : "valid", info, payload };
   } catch (e) {
     return { status: "unknown", reason: e.message, info, payload };
