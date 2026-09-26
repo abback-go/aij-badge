@@ -26,7 +26,7 @@ const b64urlJson = (text) => JSON.parse(new TextDecoder().decode(b64urlBytes(tex
 
 // 서명을 확인하기 전에 다루는 입력의 크기 상한. 작은 압축 데이터가 거대하게 풀리는 파일로 브라우저 메모리를
 // 고갈시키지 못하게 한다. 우리 배지는 PNG 약 0.5MB, 배지 정보(JWT) 수 KB, 취소 목록은 131072비트(16KB) 단위다.
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
+export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_TOKEN_BYTES = 256 * 1024;
 const MAX_STATUS_LIST_BYTES = 16 * 1024 * 1024;
 
@@ -171,9 +171,44 @@ const SCHEMA_FILES = {
 const SCHEMA_ANNOTATIONS = new Set(["$schema", "$id", "$comment", "$defs", "title", "description", "examples", "default"]);
 const SCHEMA_KEYWORDS = new Set(["$ref", "type", "enum", "pattern", "format", "minItems", "items", "additionalItems",
   "contains", "required", "properties", "propertyNames", "additionalProperties", "allOf", "anyOf", "oneOf"]);
-const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/i;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const patterns = new Map();
+
+// RFC 3339 날짜·시각(JSON Schema의 date-time·date 형식). JavaScript Date.parse는 24:00이나 없는 날짜(2월 30일)도
+// 받아들이므로 범위를 직접 확인한다. 윤초(초 60)는 UTC로 23:59:60일 때만 허용한다.
+function isFullDate(y, m, d) {
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return m >= 1 && m <= 12 && d >= 1 && d <= days[m - 1];
+}
+
+export function isRfc3339Date(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  return !!m && isFullDate(+m[1], +m[2], +m[3]);
+}
+
+export function isRfc3339DateTime(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(\.\d+)?(?:[Zz]|([+-])(\d{2}):(\d{2}))$/.exec(s);
+  if (!m) return false;
+  const [hour, minute, second] = [+m[4], +m[5], +m[6]];
+  const offset = m[8] ? (m[8] === "+" ? 1 : -1) * (+m[9] * 60 + +m[10]) : 0;
+  if (!isFullDate(+m[1], +m[2], +m[3]) || hour > 23 || minute > 59 || second > 60) return false;
+  if (m[8] && (+m[9] > 23 || +m[10] > 59)) return false;
+  if (second === 60 && (((hour * 60 + minute - offset) % 1440) + 1440) % 1440 !== 23 * 60 + 59) return false;
+  return true;
+}
+
+// 있으면 형식이 맞아야 하는 시각 값(밀리초). 없으면 undefined, 형식이 틀리면 null.
+function isoTime(value) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !isRfc3339DateTime(value)) return null;
+  const t = Date.parse(value.replace(/:60(?=[.Zz+-])/, ":59"));  // 윤초는 그 직전 초로 계산
+  return Number.isNaN(t) ? null : t;
+}
+
+function epochTime(value) {
+  if (value === undefined) return undefined;
+  return typeof value === "number" && Number.isFinite(value) ? value * 1000 : null;
+}
 
 const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -230,10 +265,8 @@ export function schemaError(root, schema, value, path = "$") {
   if (schema.enum !== undefined && !schema.enum.some((v) => sameValue(v, value))) return fail("허용되지 않는 값");
   if (typeof value === "string") {
     if (schema.pattern !== undefined && !regex(schema.pattern).test(value)) return fail("형식이 맞지 않음");
-    if (schema.format === "date-time" && !(DATE_TIME.test(value) && !Number.isNaN(Date.parse(value)))) {
-      return fail("날짜·시각 형식이 아님");
-    }
-    if (schema.format === "date" && !(DATE.test(value) && !Number.isNaN(Date.parse(value)))) return fail("날짜 형식이 아님");
+    if (schema.format === "date-time" && !isRfc3339DateTime(value)) return fail("날짜·시각 형식이 아님");
+    if (schema.format === "date" && !isRfc3339Date(value)) return fail("날짜 형식이 아님");
   }
   if (Array.isArray(value)) {
     if (schema.minItems !== undefined && value.length < schema.minItems) return fail(`항목이 ${schema.minItems}개 이상이어야 함`);
@@ -359,10 +392,17 @@ async function loadStatusList(url, didDoc, issuerDid, fetchFn, now) {
   if (list.id !== url) throw new Error("배지가 가리키는 취소 목록이 아닙니다");
   if (list.credentialSubject?.statusPurpose !== "revocation") throw new Error("취소(revocation) 목록이 아닙니다");
   // 목록 자체의 유효 기간: 아직 시작되지 않았거나 끝난 목록은 쓰지 않는다(validUntil을 요구하지는 않음)
-  const starts = [Date.parse(list.validFrom), typeof list.nbf === "number" ? list.nbf * 1000 : NaN];
-  if (starts.some((t) => t > now.getTime() + CLOCK_SKEW_MS)) throw new Error("취소 목록의 유효 기간이 아직 시작되지 않았습니다");
-  const ends = [Date.parse(list.validUntil), typeof list.exp === "number" ? list.exp * 1000 : NaN];
-  if (ends.some((t) => t < now.getTime() - CLOCK_SKEW_MS)) throw new Error("취소 목록의 유효 기간이 지났습니다");
+  // 기간 값은 없어도 되지만, 있는데 형식이 틀리면 기한이 없는 것으로 보지 않고 목록을 쓰지 않는다.
+  const times = { validFrom: isoTime(list.validFrom), nbf: epochTime(list.nbf),
+                  validUntil: isoTime(list.validUntil), exp: epochTime(list.exp) };
+  const broken = Object.keys(times).filter((k) => times[k] === null);
+  if (broken.length) throw new Error(`취소 목록의 기간 값(${broken.join(", ")}) 형식이 올바르지 않습니다`);
+  if ([times.validFrom, times.nbf].some((t) => t > now.getTime() + CLOCK_SKEW_MS)) {
+    throw new Error("취소 목록의 유효 기간이 아직 시작되지 않았습니다");
+  }
+  if ([times.validUntil, times.exp].some((t) => t < now.getTime() - CLOCK_SKEW_MS)) {
+    throw new Error("취소 목록의 유효 기간이 지났습니다");
+  }
   const encoded = list.credentialSubject?.encodedList || "";
   if (!encoded.startsWith("u")) throw new Error("취소 목록 형식 오류");
   const bits = await inflate(b64urlBytes(encoded.slice(1)), "gzip", MAX_STATUS_LIST_BYTES);
@@ -374,13 +414,12 @@ async function loadStatusList(url, didDoc, issuerDid, fetchFn, now) {
 const CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 function checkValidity(payload, now) {
-  const from = Date.parse(payload.validFrom);
-  if (!Number.isNaN(from) && from > now.getTime() + CLOCK_SKEW_MS) {
-    throw new BadgeError("아직 유효 기간이 시작되지 않은 배지입니다.");
-  }
-  // §8.2.6.1: exp가 있으면 그것이 유효 기간 끝이다.
-  const until = typeof payload.exp === "number" ? payload.exp * 1000 : Date.parse(payload.validUntil);
-  if (!Number.isNaN(until) && until < now.getTime() - CLOCK_SKEW_MS) throw new BadgeError("유효 기간이 지난 배지입니다.");
+  // §8.2.6.1: exp가 있으면 그것이 유효 기간 끝이다. 기간 값이 있는데 형식이 틀리면 기한이 없는 것으로 보지 않는다.
+  const from = isoTime(payload.validFrom);
+  const until = payload.exp !== undefined ? epochTime(payload.exp) : isoTime(payload.validUntil);
+  if (from === null || until === null) throw new BadgeError("Open Badges 배지 형식이 아닙니다: 유효 기간 값");
+  if (from > now.getTime() + CLOCK_SKEW_MS) throw new BadgeError("아직 유효 기간이 시작되지 않은 배지입니다.");
+  if (until < now.getTime() - CLOCK_SKEW_MS) throw new BadgeError("유효 기간이 지난 배지입니다.");
 }
 
 /**

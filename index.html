@@ -126,7 +126,7 @@
 </main>
 
 <script type="module">
-  import { checkOwner, verifyBadge } from "./verify.js";
+  import { MAX_FILE_BYTES, checkOwner, verifyBadge } from "./verify.js";
 
   const issuerDid = document.querySelector('meta[name="issuer-did"]').content;
   const $ = (id) => document.getElementById(id);
@@ -195,8 +195,11 @@
     const mine = ++latest;
     current = null;
     if (previewUrl) URL.revokeObjectURL(previewUrl);
-    previewUrl = URL.createObjectURL(file);
-    $("preview").src = previewUrl;
+    // 너무 큰 파일은 메모리에 읽기 전에(미리보기도 만들지 않고) 거부한다
+    const tooBig = file.size > MAX_FILE_BYTES;
+    previewUrl = tooBig ? null : URL.createObjectURL(file);
+    $("preview").hidden = tooBig;
+    if (previewUrl) $("preview").src = previewUrl;
     $("result").hidden = false;
     $("status").className = "status";
     $("status").textContent = "확인 중…";
@@ -206,10 +209,14 @@
     $("owner-result").textContent = "";
 
     let result;
-    try {
-      result = await verifyBadge(new Uint8Array(await file.arrayBuffer()), { issuerDid });
-    } catch (e) {  // 예상 못 한 오류에도 '확인 중'에 멈춰 있지 않게
-      result = { status: "error", reason: `확인 중 오류가 났습니다. (${e.message})` };
+    if (tooBig) {
+      result = { status: "invalid", reason: "파일이 너무 큽니다. 배지 PNG 파일인지 확인하세요." };
+    } else {
+      try {
+        result = await verifyBadge(new Uint8Array(await file.arrayBuffer()), { issuerDid });
+      } catch (e) {  // 예상 못 한 오류에도 '확인 중'에 멈춰 있지 않게
+        result = { status: "error", reason: `확인 중 오류가 났습니다. (${e.message})` };
+      }
     }
     if (mine !== latest) return;
     const [tone, label, text] = STATUS[result.status];
