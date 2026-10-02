@@ -216,6 +216,11 @@
   .ladder img { display: block; width: min(100%, 128px); height: auto; margin: 0 auto 12px; }
   .ladder .lv { display: block; color: var(--accent); font-size: 13px; font-weight: 700; }
   .ladder .nm { display: block; font-size: 15px; font-weight: 600; }
+  .ladder .gift {
+    display: inline-block; margin-top: 10px; padding: 3px 10px; font-size: 12px; font-weight: 700;
+    color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 999px;
+  }
+  .levels-lede strong { color: var(--text); font-weight: 600; }
   .ladder li.is-current {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent), var(--shadow);
@@ -344,7 +349,7 @@
 
   <section class="levels" id="levels" aria-labelledby="levels-title" hidden>
     <h2 id="levels-title">AI Jungle Badge 단계</h2>
-    <p class="levels-lede">씨앗에서 정글까지, 한 단계씩 올라가며 받는 배지입니다.</p>
+    <p class="levels-lede">씨앗에서 정글까지, 한 단계씩 올라가며 받는 배지입니다. <strong>Lv.4와 Lv.5는 실물 배지도 증정합니다.</strong></p>
     <ol class="ladder" id="ladder"></ol>
   </section>
   <!-- 단계 목록: 사이트를 만들 때 achievements.json에서 채워 넣는다(build_site) -->
@@ -434,6 +439,9 @@
     $("owner-result").className = "owner-result";
   }
 
+  // 실물 배지도 함께 증정하는 단계. 운영 방침이 바뀌면 여기와 단계 줄 안내 문장(levels-lede)을 함께 고친다.
+  const PHYSICAL_LEVELS = new Set([4, 5]);
+
   // 단계 목록. 사이트를 만들기 전 원본 파일을 바로 열면 채워져 있지 않으므로 단계 줄을 숨긴 채 둔다.
   let LEVELS = [];
   try { LEVELS = JSON.parse($("levels-data").textContent); } catch { LEVELS = []; }
@@ -455,6 +463,9 @@
         nm.textContent = lv.label;
       }
       li.append(img, no, nm);
+      if (PHYSICAL_LEVELS.has(lv.level)) {
+        li.append(Object.assign(document.createElement("span"), { className: "gift", textContent: "실물 배지 증정" }));
+      }
       return li;
     }));
     $("levels").hidden = false;
@@ -474,6 +485,9 @@
     if (next) {
       $("next-img").src = next.thumb;
       $("next-text").replaceChildren("다음 단계는 ", strong, "입니다.");
+      $("next-hint").textContent = PHYSICAL_LEVELS.has(next.level)
+        ? "실물 배지도 함께 증정하는 단계입니다. AI Jungle 비교과 프로그램에서 도전해 보세요."
+        : "AI Jungle 비교과 프로그램에서 이어서 도전할 수 있습니다.";
     } else {
       $("next-text").replaceChildren("가장 높은 단계인 ", strong, " 배지입니다.");
     }
