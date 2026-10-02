@@ -4,7 +4,7 @@
     "https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json",
     "https://purl.imsglobal.org/spec/ob/v3p0/extensions.json"
   ],
-  "id": "https://abback-go.github.io/aij-badge/achievements/lv1-seed.json",
+  "id": "https://badge.mjc-aion.org/achievements/lv1-seed.json",
   "type": [
     "Achievement"
   ],
@@ -15,7 +15,7 @@
   },
   "achievementType": "Badge",
   "image": {
-    "id": "https://abback-go.github.io/aij-badge/images/lv1-seed.png",
+    "id": "https://badge.mjc-aion.org/images/lv1-seed.png",
     "type": "Image"
   }
 }

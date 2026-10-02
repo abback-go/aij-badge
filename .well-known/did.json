@@ -3,12 +3,12 @@
     "https://www.w3.org/ns/did/v1",
     "https://w3id.org/security/suites/jws-2020/v1"
   ],
-  "id": "did:web:abback-go.github.io:aij-badge",
+  "id": "did:web:badge.mjc-aion.org",
   "verificationMethod": [
     {
-      "id": "did:web:abback-go.github.io:aij-badge#key-1",
+      "id": "did:web:badge.mjc-aion.org#key-1",
       "type": "JsonWebKey2020",
-      "controller": "did:web:abback-go.github.io:aij-badge",
+      "controller": "did:web:badge.mjc-aion.org",
       "publicKeyJwk": {
         "kty": "RSA",
         "key_ops": [
@@ -20,6 +20,6 @@
     }
   ],
   "assertionMethod": [
-    "did:web:abback-go.github.io:aij-badge#key-1"
+    "did:web:badge.mjc-aion.org#key-1"
   ]
 }

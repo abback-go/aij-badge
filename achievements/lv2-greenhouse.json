@@ -4,7 +4,7 @@
     "https://purl.imsglobal.org/spec/ob/v3p0/context-3.0.3.json",
     "https://purl.imsglobal.org/spec/ob/v3p0/extensions.json"
   ],
-  "id": "https://abback-go.github.io/aij-badge/achievements/lv2-greenhouse.json",
+  "id": "https://badge.mjc-aion.org/achievements/lv2-greenhouse.json",
   "type": [
     "Achievement"
   ],
@@ -15,7 +15,7 @@
   },
   "achievementType": "Badge",
   "image": {
-    "id": "https://abback-go.github.io/aij-badge/images/lv2-greenhouse.png",
+    "id": "https://badge.mjc-aion.org/images/lv2-greenhouse.png",
     "type": "Image"
   }
 }
