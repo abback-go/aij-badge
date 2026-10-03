@@ -444,6 +444,7 @@
   // 끝 글자에 받침이 있는지(조사 고르기용): 한글 음절과 숫자만 판단하고 그 밖은 받침 없음으로 본다
   function hasBatchim(word) {
     const ch = word.trim().slice(-1);
+    if (!ch) return false;  // 빈 낱말("".includes 는 참이 되므로 따로 막는다)
     const code = ch.charCodeAt(0);
     if (code >= 0xac00 && code <= 0xd7a3) return (code - 0xac00) % 28 !== 0;
     return "013678".includes(ch);  // 영·일·삼·육·칠·팔
@@ -485,8 +486,8 @@
       }
       return li;
     }));
-    // 단계 이름의 앞 낱말("Lv.4")로 안내 문장을 만든다
-    $("physical-note").textContent = physicalSentence(LEVELS.filter((lv) => lv.physical).map((lv) => lv.label.split(" ")[0]));
+    // 단계 번호로 안내 문장을 만든다("Lv.4와 Lv.5는 …") — 이름의 낱말 나누기에 기대지 않는다(단계가 하나면 이름 전체가 label)
+    $("physical-note").textContent = physicalSentence(LEVELS.filter((lv) => lv.physical).map((lv) => `Lv.${lv.level}`));
     $("levels").hidden = false;
   }
 
