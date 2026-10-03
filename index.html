@@ -349,11 +349,11 @@
 
   <section class="levels" id="levels" aria-labelledby="levels-title" hidden>
     <h2 id="levels-title">AI Jungle Badge 단계</h2>
-    <p class="levels-lede">씨앗에서 정글까지, 한 단계씩 올라가며 받는 배지입니다. <strong>Lv.4와 Lv.5는 실물 배지도 증정합니다.</strong></p>
+    <p class="levels-lede">씨앗에서 정글까지, 한 단계씩 올라가며 받는 배지입니다. <strong id="physical-note"></strong></p>
     <ol class="ladder" id="ladder"></ol>
   </section>
   <!-- 단계 목록: 사이트를 만들 때 achievements.json에서 채워 넣는다(build_site) -->
-  <script type="application/json" id="levels-data">[{"level": 1, "label": "Lv.1 Seed (씨앗)", "thumb": "images/lv1-seed-thumb.png", "achievementId": "https://badge.mjc-aion.org/achievements/lv1-seed.json"}, {"level": 2, "label": "Lv.2 Greenhouse (온실)", "thumb": "images/lv2-greenhouse-thumb.png", "achievementId": "https://badge.mjc-aion.org/achievements/lv2-greenhouse.json"}, {"level": 3, "label": "Lv.3 Garden (정원)", "thumb": "images/lv3-garden-thumb.png", "achievementId": "https://badge.mjc-aion.org/achievements/lv3-garden.json"}, {"level": 4, "label": "Lv.4 Forest (숲)", "thumb": "images/lv4-forest-thumb.png", "achievementId": "https://badge.mjc-aion.org/achievements/lv4-forest.json"}, {"level": 5, "label": "Lv.5 Jungle (정글)", "thumb": "images/lv5-jungle-thumb.png", "achievementId": "https://badge.mjc-aion.org/achievements/lv5-jungle.json"}]</script>
+  <script type="application/json" id="levels-data">[{"level": 1, "label": "Lv.1 Seed (씨앗)", "thumb": "images/lv1-seed-thumb.png", "achievementId": "https://badge.mjc-aion.org/achievements/lv1-seed.json", "physical": false}, {"level": 2, "label": "Lv.2 Greenhouse (온실)", "thumb": "images/lv2-greenhouse-thumb.png", "achievementId": "https://badge.mjc-aion.org/achievements/lv2-greenhouse.json", "physical": false}, {"level": 3, "label": "Lv.3 Garden (정원)", "thumb": "images/lv3-garden-thumb.png", "achievementId": "https://badge.mjc-aion.org/achievements/lv3-garden.json", "physical": false}, {"level": 4, "label": "Lv.4 Forest (숲)", "thumb": "images/lv4-forest-thumb.png", "achievementId": "https://badge.mjc-aion.org/achievements/lv4-forest.json", "physical": true}, {"level": 5, "label": "Lv.5 Jungle (정글)", "thumb": "images/lv5-jungle-thumb.png", "achievementId": "https://badge.mjc-aion.org/achievements/lv5-jungle.json", "physical": true}]</script>
 
   <footer>
     <span>확인을 위해 발급기관의 공개키와 취소 목록만 불러옵니다.</span>
@@ -439,8 +439,25 @@
     $("owner-result").className = "owner-result";
   }
 
-  // 실물 배지도 함께 증정하는 단계. 운영 방침이 바뀌면 여기와 단계 줄 안내 문장(levels-lede)을 함께 고친다.
-  const PHYSICAL_LEVELS = new Set([4, 5]);
+  // 실물 배지도 함께 주는 단계는 achievements.json의 "physical"에서 온다(단계 목록의 lv.physical).
+
+  // 끝 글자에 받침이 있는지(조사 고르기용): 한글 음절과 숫자만 판단하고 그 밖은 받침 없음으로 본다
+  function hasBatchim(word) {
+    const ch = word.trim().slice(-1);
+    const code = ch.charCodeAt(0);
+    if (code >= 0xac00 && code <= 0xd7a3) return (code - 0xac00) % 28 !== 0;
+    return "013678".includes(ch);  // 영·일·삼·육·칠·팔
+  }
+
+  // 예: ["Lv.4", "Lv.5"] → "Lv.4와 Lv.5는 실물 배지도 증정합니다."
+  function physicalSentence(names) {
+    if (!names.length) return "";
+    const last = names[names.length - 1];
+    const head = names.slice(0, -1);
+    const lead = head.length
+      ? `${head.join(", ")}${hasBatchim(head[head.length - 1]) ? "과" : "와"} ` : "";
+    return `${lead}${last}${hasBatchim(last) ? "은" : "는"} 실물 배지도 증정합니다.`;
+  }
 
   // 단계 목록. 사이트를 만들기 전 원본 파일을 바로 열면 채워져 있지 않으므로 단계 줄을 숨긴 채 둔다.
   let LEVELS = [];
@@ -463,11 +480,13 @@
         nm.textContent = lv.label;
       }
       li.append(img, no, nm);
-      if (PHYSICAL_LEVELS.has(lv.level)) {
+      if (lv.physical) {
         li.append(Object.assign(document.createElement("span"), { className: "gift", textContent: "실물 배지 증정" }));
       }
       return li;
     }));
+    // 단계 이름의 앞 낱말("Lv.4")로 안내 문장을 만든다
+    $("physical-note").textContent = physicalSentence(LEVELS.filter((lv) => lv.physical).map((lv) => lv.label.split(" ")[0]));
     $("levels").hidden = false;
   }
 
@@ -485,7 +504,7 @@
     if (next) {
       $("next-img").src = next.thumb;
       $("next-text").replaceChildren("다음 단계는 ", strong, "입니다.");
-      $("next-hint").textContent = PHYSICAL_LEVELS.has(next.level)
+      $("next-hint").textContent = next.physical
         ? "실물 배지도 함께 증정하는 단계입니다. AI Jungle 비교과 프로그램에서 도전해 보세요."
         : "AI Jungle 비교과 프로그램에서 이어서 도전할 수 있습니다.";
     } else {
